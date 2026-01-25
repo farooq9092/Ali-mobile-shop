@@ -11,8 +11,7 @@ st.title("📱 Ali Mobile Shop - Professional Manager")
 
 # --- Google Sheets Connection ---
 # Yahan apni Google Sheet ka URL dalein
-SHEET_URL = "APNI_GOOGLE_SHEET_KA_URL_YAHAN_PASTE_KAREIN"
-
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss/edit?usp=drivesdk"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
