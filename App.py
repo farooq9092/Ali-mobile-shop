@@ -13,7 +13,7 @@ st.title("📱 Ali Mobile Shop Manager")
 # --- Google Sheet URL (Public CSV Link) ---
 # Is link ke aakhir mein /export?format=csv lazmi hona chahiye
 SHEET_ID = "1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss/edit?usp=drivesdk"
 
 def load_data():
     try:
