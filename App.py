@@ -14,6 +14,7 @@ st.markdown("""
     .main { background-color: #0e1117; }
     .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #4e5d6c; }
     h1 { color: #00cc66; text-align: center; }
+    .target-box { background-color: #262730; padding: 20px; border-radius: 15px; text-align: center; border: 2px solid #00cc66; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -40,11 +41,11 @@ def load_data():
         cols = ['Date', 'Category', 'Item', 'Cost', 'Sale', 'Profit', 'Payment']
         return pd.DataFrame(columns=cols), None
 
-def save_data(df, sha):
+def save_data(df, sha, message="Update Record"):
     csv_buffer = io.StringIO()
     df.to_csv(csv_buffer, index=False)
     if sha:
-        repo.update_file(CSV_FILE, "Update Record", csv_buffer.getvalue(), sha)
+        repo.update_file(CSV_FILE, message, csv_buffer.getvalue(), sha)
     else:
         repo.create_file(CSV_FILE, "Initial Record", csv_buffer.getvalue())
 
@@ -57,10 +58,10 @@ st.markdown("---")
 
 # --- Sidebar Navigation ---
 st.sidebar.title("Ali Mobile Pro")
-menu = st.sidebar.radio("Main Menu", ["Nayi Entry (New Sale)", "Dashboard (Reports)", "History & Records"])
+menu = st.sidebar.radio("Main Menu", ["Nayi Entry", "Dashboard (Reports)", "History & Delete"])
 
 # --- 1. NEW ENTRY ---
-if menu == "Nayi Entry (New Sale)":
+if menu == "Nayi Entry":
     st.header("📝 Nayi Entry Karein")
     with st.form("entry_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -76,71 +77,73 @@ if menu == "Nayi Entry (New Sale)":
         if st.form_submit_button("💾 Save to Cloud"):
             if item and sale > 0:
                 profit = sale - cost
+                if not df.empty:
+                    df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
                 new_row = pd.DataFrame([[date.strftime('%Y-%m-%d'), cat, item, cost, sale, profit, pay]], columns=df.columns)
-                # Convert back to string for consistency
-                df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
                 updated_df = pd.concat([df, new_row], ignore_index=True)
-                save_data(updated_df, current_sha)
-                st.success(f"✅ Record Sync Ho Gaya! Munafa: {profit}")
+                save_data(updated_df, current_sha, f"Added: {item}")
+                st.success(f"✅ Record Sync Ho Gaya!")
                 st.rerun()
 
-# --- 2. DASHBOARD (Detailed Reports) ---
+# --- 2. DASHBOARD ---
 elif menu == "Dashboard (Reports)":
     st.header("📊 Business Analytics")
-    
     if not df.empty:
-        # Filtering Options
-        st.subheader("Filters")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            view_type = st.radio("View Type", ["Overall (Sab Saath)", "Accessories Only", "Repairing Only"], horizontal=True)
-        with col_f2:
-            time_frame = st.radio("Time Frame", ["Daily", "Monthly"], horizontal=True)
+        # --- Target Tracker Section ---
+        target_profit = 60000
+        current_profit = df['Profit'].sum()
+        progress = min(current_profit / target_profit, 1.0)
+        remaining = max(target_profit - current_profit, 0)
 
-        # Apply Filters
-        df_filtered = df.copy()
-        if "Accessories" in view_type:
-            df_filtered = df[df['Category'] == "Accessories"]
-        elif "Repairing" in view_type:
-            df_filtered = df[df['Category'] == "Repairing"]
+        st.markdown(f"""
+            <div class="target-box">
+                <h3 style='margin:0; color:#00cc66;'>🎯 Monthly Profit Target: Rs. {target_profit:,}</h3>
+                <h1 style='margin:10px 0;'>Rs. {current_profit:,.0f}</h1>
+                <p style='color:#aaa;'>Progress: {progress*100:.1f}% | Remaining: Rs. {remaining:,.0f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        st.progress(progress)
 
         # Metrics
-        st.markdown("---")
         m1, m2, m3 = st.columns(3)
-        m1.metric(f"Total Sale ({view_type})", f"Rs. {df_filtered['Sale'].sum():,.0f}")
-        m2.metric(f"Total Profit ({view_type})", f"Rs. {df_filtered['Profit'].sum():,.0f}")
-        m3.metric("Total Bills", len(df_filtered))
+        m1.metric("Total Sale", f"Rs. {df['Sale'].sum():,.0f}")
+        m2.metric("Total Profit", f"Rs. {df['Profit'].sum():,.0f}")
+        m3.metric("Total Entries", len(df))
 
-        # Charts
         st.markdown("---")
         c1, c2 = st.columns(2)
         
         with c1:
-            st.subheader("📈 Sale Graph")
-            if time_frame == "Daily":
-                daily_data = df_filtered.groupby('Date')['Sale'].sum().reset_index()
-                fig = px.bar(daily_data, x='Date', y='Sale', title="Rozana ki Sale", color='Sale')
-            else:
-                df_filtered['Month'] = pd.to_datetime(df_filtered['Date']).dt.to_period('M').astype(str)
-                monthly_data = df_filtered.groupby('Month')['Sale'].sum().reset_index()
-                fig = px.bar(monthly_data, x='Month', y='Sale', title="Mahana Sale")
-            st.plotly_chart(fig, use_container_width=True)
+            st.subheader("💳 Payment Methods")
+            fig_pay = px.pie(df, values='Sale', names='Payment', hole=0.4, 
+                             color='Payment', color_discrete_map={'Cash':'#00cc66', 'EasyPaisa':'#00bfff', 'JazzCash':'#ffcc00'})
+            st.plotly_chart(fig_pay, use_container_width=True)
 
         with c2:
-            st.subheader("💰 Profit vs Cost")
-            fig_pie = px.pie(df_filtered, values='Sale', names='Category', hole=0.4, title="Revenue Source")
-            if view_type == "Overall (Sab Saath)":
-                st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info(f"Aap abhi sirf {view_type} dekh rahe hain.")
+            st.subheader("📈 Profit by Category")
+            fig_cat = px.bar(df.groupby('Category')['Profit'].sum().reset_index(), 
+                             x='Category', y='Profit', color='Category', text_auto='.2s')
+            st.plotly_chart(fig_cat, use_container_width=True)
+            
+        st.subheader("📅 Daily Sales Trend")
+        fig_line = px.line(df.groupby('Date')['Sale'].sum().reset_index(), x='Date', y='Sale', markers=True)
+        st.plotly_chart(fig_line, use_container_width=True)
     else:
-        st.info("Abhi data khali hai. Entry karein!")
+        st.info("No data available.")
 
-# --- 3. HISTORY ---
-elif menu == "History & Records":
-    st.header("📋 Database Record")
-    st.dataframe(df.sort_values(by='Date', ascending=False), use_container_width=True)
-    
+# --- 3. HISTORY & DELETE ---
+elif menu == "History & Delete":
+    st.header("📋 Records Management")
     if not df.empty:
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Backup (CSV)", csv, "ali_mobile_record.csv", "text/csv")
+        st.write("Niche table se row index check karein:")
+        st.dataframe(df.sort_index(ascending=False), use_container_width=True)
+        
+        st.markdown("---")
+        delete_idx = st.number_input("Delete karne ke liye Index likhein:", min_value=0, max_value=len(df)-1, step=1)
+        if st.button("❌ Confirm Delete"):
+            updated_df = df.drop(df.index[delete_idx])
+            save_data(updated_df, current_sha, f"Deleted index {delete_idx}")
+            st.warning("Entry delete ho gayi!")
+            st.rerun()
+    else:
+        st.info("Database empty hai.")
