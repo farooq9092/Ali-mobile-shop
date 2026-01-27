@@ -11,7 +11,7 @@ st.title("📱 Ali Mobile Shop - Management System")
 
 # --- Google Sheet Connection ---
 # Apni sheet ka URL yahan lazmi dalein
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss/edit?usp=sharing"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss/edit?usp=drivesdk"
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
