@@ -6,17 +6,7 @@ import io
 from datetime import datetime
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Ali Mobile Shop - Pro Manager", page_icon="📱", layout="wide")
-
-# --- Custom Styling ---
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    .stMetric { background-color: #1e2130; padding: 15px; border-radius: 10px; border: 1px solid #4e5d6c; }
-    h1 { color: #00cc66; text-align: center; }
-    .target-box { background-color: #262730; padding: 20px; border-radius: 15px; text-align: center; border: 2px solid #00cc66; margin-bottom: 20px; }
-    </style>
-    """, unsafe_allow_html=True)
+st.set_page_config(page_title="Ali Mobiles & Communication", page_icon="📱", layout="wide")
 
 # --- GitHub Auth ---
 try:
@@ -28,6 +18,28 @@ except Exception:
     st.error("Secrets Missing! Check GITHUB_TOKEN and REPO_NAME.")
     st.stop()
 
+# --- Load Logo from GitHub ---
+def get_logo():
+    try:
+        file_content = repo.get_contents("1000041294.jpg") # Ya jo bhi aapne GitHub pe naam rakha ho
+        return file_content.download_url
+    except:
+        return None
+
+logo_url = get_logo()
+
+# --- Header with Logo ---
+st.markdown("<br>", unsafe_allow_html=True)
+col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+with col_l2:
+    if logo_url:
+        st.image(logo_url, use_container_width=True)
+    else:
+        st.markdown("<h1 style='text-align: center; color: #00cc66;'>Ali Mobiles & Communication</h1>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# --- Load Data Logic ---
 CSV_FILE = "sales_record.csv"
 
 def load_data():
@@ -49,15 +61,10 @@ def save_data(df, sha, message="Update Record"):
     else:
         repo.create_file(CSV_FILE, "Initial Record", csv_buffer.getvalue())
 
-# Load Data
 df, current_sha = load_data()
 
-# --- Header ---
-st.markdown("<h1>📱 Ali Mobile Shop - Management System</h1>", unsafe_allow_html=True)
-st.markdown("---")
-
 # --- Sidebar Navigation ---
-st.sidebar.title("Ali Mobile Pro")
+st.sidebar.title("Shop Manager")
 menu = st.sidebar.radio("Main Menu", ["Nayi Entry", "Dashboard (Reports)", "History & Delete"])
 
 # --- 1. NEW ENTRY ---
@@ -89,22 +96,21 @@ if menu == "Nayi Entry":
 elif menu == "Dashboard (Reports)":
     st.header("📊 Business Analytics")
     if not df.empty:
-        # --- Target Tracker Section ---
+        # Target Tracker
         target_profit = 60000
         current_profit = df['Profit'].sum()
         progress = min(current_profit / target_profit, 1.0)
-        remaining = max(target_profit - current_profit, 0)
-
+        
         st.markdown(f"""
-            <div class="target-box">
+            <div style="background-color: #1e2130; padding: 20px; border-radius: 15px; text-align: center; border: 2px solid #00cc66;">
                 <h3 style='margin:0; color:#00cc66;'>🎯 Monthly Profit Target: Rs. {target_profit:,}</h3>
                 <h1 style='margin:10px 0;'>Rs. {current_profit:,.0f}</h1>
-                <p style='color:#aaa;'>Progress: {progress*100:.1f}% | Remaining: Rs. {remaining:,.0f}</p>
+                <p style='color:#aaa;'>Progress: {progress*100:.1f}% | Remaining: Rs. {max(target_profit-current_profit, 0):,.0f}</p>
             </div>
             """, unsafe_allow_html=True)
         st.progress(progress)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        # Metrics
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Sale", f"Rs. {df['Sale'].sum():,.0f}")
         m2.metric("Total Profit", f"Rs. {df['Profit'].sum():,.0f}")
@@ -112,22 +118,15 @@ elif menu == "Dashboard (Reports)":
 
         st.markdown("---")
         c1, c2 = st.columns(2)
-        
         with c1:
             st.subheader("💳 Payment Methods")
             fig_pay = px.pie(df, values='Sale', names='Payment', hole=0.4, 
                              color='Payment', color_discrete_map={'Cash':'#00cc66', 'EasyPaisa':'#00bfff', 'JazzCash':'#ffcc00'})
             st.plotly_chart(fig_pay, use_container_width=True)
-
         with c2:
             st.subheader("📈 Profit by Category")
-            fig_cat = px.bar(df.groupby('Category')['Profit'].sum().reset_index(), 
-                             x='Category', y='Profit', color='Category', text_auto='.2s')
+            fig_cat = px.bar(df.groupby('Category')['Profit'].sum().reset_index(), x='Category', y='Profit', color='Category')
             st.plotly_chart(fig_cat, use_container_width=True)
-            
-        st.subheader("📅 Daily Sales Trend")
-        fig_line = px.line(df.groupby('Date')['Sale'].sum().reset_index(), x='Date', y='Sale', markers=True)
-        st.plotly_chart(fig_line, use_container_width=True)
     else:
         st.info("No data available.")
 
@@ -135,15 +134,11 @@ elif menu == "Dashboard (Reports)":
 elif menu == "History & Delete":
     st.header("📋 Records Management")
     if not df.empty:
-        st.write("Niche table se row index check karein:")
         st.dataframe(df.sort_index(ascending=False), use_container_width=True)
-        
         st.markdown("---")
-        delete_idx = st.number_input("Delete karne ke liye Index likhein:", min_value=0, max_value=len(df)-1, step=1)
+        delete_idx = st.number_input("Delete Index:", min_value=0, max_value=len(df)-1, step=1)
         if st.button("❌ Confirm Delete"):
             updated_df = df.drop(df.index[delete_idx])
             save_data(updated_df, current_sha, f"Deleted index {delete_idx}")
             st.warning("Entry delete ho gayi!")
             st.rerun()
-    else:
-        st.info("Database empty hai.")
