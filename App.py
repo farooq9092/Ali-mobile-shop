@@ -1,58 +1,117 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import sqlite3
 from datetime import datetime
-import io
-import requests
 
 # --- Page Config ---
-st.set_page_config(page_title="Ali Mobile Shop", page_icon="📱", layout="wide")
+st.set_page_config(page_title="Ali Mobile Shop Pro", page_icon="📱", layout="wide")
 
-st.title("📱 Ali Mobile Shop Manager")
+# --- Database Setup (SQLite) ---
+DB_FILE = "ali_mobile_shop_db.sqlite"
 
-# --- Google Sheet URL (Public CSV Link) ---
-# Is link ke aakhir mein /export?format=csv lazmi hona chahiye
-SHEET_ID = "1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/1UjU0Zri8NKdxXjePGK-mTTMRFUluVs93aanUblqS3ss/edit?usp=drivesdk"
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS sales
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  date TEXT,
+                  category TEXT,
+                  item_name TEXT,
+                  cost_price REAL,
+                  sale_price REAL,
+                  profit REAL,
+                  payment_method TEXT)''')
+    conn.commit()
+    conn.close()
 
-def load_data():
-    try:
-        # Direct CSV link se data read karna
-        df = pd.read_csv(CSV_URL)
-        return df
-    except:
-        # Agar sheet khali ho
-        return pd.DataFrame(columns=['Date', 'Category', 'Item Name', 'Cost Price', 'Sale Price', 'Profit', 'Payment'])
+def add_data(date, category, item, cost, sale, profit, payment):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO sales (date, category, item_name, cost_price, sale_price, profit, payment_method) VALUES (?,?,?,?,?,?,?)",
+              (date, category, item, cost, sale, profit, payment))
+    conn.commit()
+    conn.close()
 
-df = load_data()
+def get_all_data():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT * FROM sales", conn)
+    conn.close()
+    return df
 
-# --- Sidebar Menu ---
-menu = st.sidebar.radio("Menu", ["Nayi Entry", "Dashboard", "Record Dekhein"])
+def delete_record(record_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM sales WHERE id=?", (record_id,))
+    conn.commit()
+    conn.close()
 
-if menu == "Nayi Entry":
-    st.header("📝 Nayi Sale/Repairing")
-    # Note: Link se direct "Update" karna mushkil hai, isliye hum yahan download link dein ge
-    st.info("Note: Google Policy ki wajah se Direct Save band hai. Aap entries niche dekh kar Excel mein update kar sakte hain.")
-    
-    with st.form("my_form"):
-        date = st.date_input("Date", datetime.now())
-        cat = st.selectbox("Category", ["Accessories", "Repairing"])
-        item = st.text_input("Item Name")
-        cost = st.number_input("Cost Price", min_value=0)
-        sale = st.number_input("Sale Price", min_value=0)
+# Initialize DB
+init_db()
+
+# --- Professional UI ---
+st.markdown("<h1 style='text-align: center;'>📱 Professional Shop Manager v2.0</h1>", unsafe_allow_html=True)
+
+menu = st.sidebar.selectbox("Dashboard Navigation", ["Sales Entry", "Business Analytics", "Database Manager"])
+
+df = get_all_data()
+
+# --- 1. SALES ENTRY ---
+if menu == "Sales Entry":
+    st.subheader("📝 New Transaction")
+    with st.form("entry_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            date = st.date_input("Date", datetime.now()).strftime('%Y-%m-%d')
+            cat = st.selectbox("Category", ["Accessories", "Repairing", "LCD/Panel", "Software"])
+            item = st.text_input("Item Description")
+        with col2:
+            cost = st.number_input("Cost Price", min_value=0.0)
+            sale = st.number_input("Sale Price", min_value=0.0)
+            pay = st.selectbox("Payment", ["Cash", "EasyPaisa", "JazzCash", "Bank"])
         
-        if st.form_submit_button("Calculated Profit Dekhein"):
-            profit = sale - cost
-            st.success(f"Profit: {profit} PKR. Isay apni Google Sheet mein manually add kar lein.")
+        if st.form_submit_button("Submit Transaction"):
+            if item and sale > 0:
+                profit = sale - cost
+                add_data(date, cat, item, cost, sale, profit, pay)
+                st.success(f"Entry Saved! Profit: {profit}")
+                st.rerun()
 
-elif menu == "Dashboard":
-    st.header("📊 Business Report")
+# --- 2. BUSINESS ANALYTICS ---
+elif menu == "Business Analytics":
+    st.subheader("📊 Performance Overview")
     if not df.empty:
-        total_sale = df['Sale Price'].sum()
-        st.metric("Total Sale", f"Rs. {total_sale}")
-        fig = px.bar(df, x='Date', y='Sale Price', color='Category')
-        st.plotly_chart(fig)
+        total_sale = df['sale_price'].sum()
+        total_profit = df['profit'].sum()
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Revenue", f"Rs. {total_sale:,.0f}")
+        m2.metric("Net Profit", f"Rs. {total_profit:,.0f}")
+        m3.metric("Total Bills", len(df))
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig_daily = px.area(df.groupby('date')['sale_price'].sum().reset_index(), 
+                                x='date', y='sale_price', title="Daily Revenue Trend")
+            st.plotly_chart(fig_daily, use_container_width=True)
+        with c2:
+            fig_pie = px.pie(df, values='profit', names='category', title="Profit Distribution", hole=0.4)
+            st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("No data available yet.")
 
-elif menu == "Record Dekhein":
-    st.header("📋 Google Sheet Data")
-    st.dataframe(df)
+# --- 3. DATABASE MANAGER ---
+elif menu == "Database Manager":
+    st.subheader("📋 Administrative Controls")
+    st.dataframe(df, use_container_width=True)
+    
+    if not df.empty:
+        record_to_del = st.selectbox("Select ID to Delete", df['id'].tolist())
+        if st.button("Delete Record Permanently"):
+            delete_record(record_to_del)
+            st.warning(f"Record {record_to_del} Deleted.")
+            st.rerun()
+        
+        # CSV Export for backup
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Database Backup (CSV)", csv, "ali_mobile_backup.csv", "text/csv")
