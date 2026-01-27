@@ -21,7 +21,7 @@ except Exception:
 # --- Load Logo from GitHub ---
 def get_logo():
     try:
-        file_content = repo.get_contents("1000041294.jpg") # Ya jo bhi aapne GitHub pe naam rakha ho
+        file_content = repo.get_contents("IMG-20260127-WA0094.jpg") # Ya jo bhi aapne GitHub pe naam rakha ho
         return file_content.download_url
     except:
         return None
