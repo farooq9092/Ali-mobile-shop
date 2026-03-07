@@ -1,102 +1,116 @@
 import streamlit as st
 from graphviz import Digraph
+import time
 
-st.set_page_config(page_title="Advanced TCP/IP Simulator", layout="wide")
+st.set_page_config(page_title="TCP/IP + OSI Advanced Simulator v3", layout="wide")
 
-st.title("🌐 Advanced TCP/IP Model Simulator")
-st.write("Simulate packet flow from Sender → Router → Receiver")
+st.title("🌐 TCP/IP + OSI Advanced Simulator v3")
+st.write("Interactive Lab Simulator: Sender → Routers → Receiver with OSI/TCP-IP view & animation")
 
-# Sidebar Inputs
+# Sidebar
 st.sidebar.header("Simulation Settings")
 protocol = st.sidebar.selectbox("Transport Protocol", ["TCP", "UDP"])
-message = st.sidebar.text_input("Enter Message")
+message = st.sidebar.text_input("Enter Message", "Hello World")
 src_ip = st.sidebar.text_input("Source IP", "192.168.1.10")
 dst_ip = st.sidebar.text_input("Destination IP", "192.168.1.20")
 src_port = st.sidebar.text_input("Source Port", "5000")
 dst_port = st.sidebar.text_input("Destination Port", "80")
+show_osi = st.sidebar.checkbox("Show OSI Model Layers")
 simulate = st.sidebar.button("Start Simulation")
 
+# Optional Packet Loss / Delay
+simulate_delay = st.sidebar.slider("Network Delay (sec)", 0.0, 3.0, 1.0)
+simulate_loss = st.sidebar.slider("Packet Loss (%)", 0, 50, 0)
+
+routers = ["Router1", "Router2"]  # Multiple routers
 
 def encapsulate(data):
-    app = data
     if protocol == "TCP":
-        transport = f"TCP(src_port={src_port}, dst_port={dst_port})[{app}]"
+        transport = f"TCP(src={src_port}, dst={dst_port})[{data}]"
     else:
-        transport = f"UDP(src_port={src_port}, dst_port={dst_port})[{app}]"
+        transport = f"UDP(src={src_port}, dst={dst_port})[{data}]"
     internet = f"IP(src={src_ip}, dst={dst_ip})[{transport}]"
-    frame = f"ETH_FRAME[{internet}]"
-    return app, transport, internet, frame
+    network_access = f"ETH_FRAME[{internet}]"
+    return data, transport, internet, network_access
 
-
-def network_diagram():
+def network_diagram(packet_stage=None):
     g = Digraph()
     g.node("A", "Sender")
-    g.node("B", "Router")
-    g.node("C", "Receiver")
-    g.edge("A", "B", label="Packet")
-    g.edge("B", "C", label="Forward")
+    for r in routers:
+        g.node(r, r)
+    g.node("B", "Receiver")
+    g.edge("A", routers[0], label=packet_stage or "Packet")
+    for i in range(len(routers)-1):
+        g.edge(routers[i], routers[i+1], label=packet_stage or "Forward")
+    g.edge(routers[-1], "B", label=packet_stage or "Forward")
     return g
 
-
-if simulate and message != "":
-    st.subheader("1️⃣ Encapsulation Process")
+def simulate_packet_flow():
     app, transport, internet, frame = encapsulate(message)
-
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.info("Application Layer")
-        st.write(app)
-    with col2:
-        st.warning("Transport Layer")
-        st.write(transport)
-    with col3:
-        st.success("Internet Layer")
-        st.write(internet)
-    with col4:
-        st.error("Network Access Layer")
-        st.write(frame)
-
-    st.divider()
-    st.subheader("2️⃣ Network Path")
-    st.graphviz_chart(network_diagram())
-
-    st.divider()
-    st.subheader("3️⃣ Packet Sent Over Network")
-    st.code(frame)
-
-    st.divider()
-    st.subheader("4️⃣ Router Processing")
-    st.write("Router reads destination IP:", dst_ip)
-    st.write("Router forwards packet to receiver")
+    stages = [("Application Layer", app),
+              ("Transport Layer", transport),
+              ("Internet Layer", internet),
+              ("Network Access Layer", frame)]
+    
+    # Encapsulation display
+    st.subheader("1️⃣ Encapsulation Process")
+    if show_osi:
+        osi_dict = {
+            "Application": app,
+            "Presentation": f"[Format]{app}",
+            "Session": f"[Session]{app}",
+            "Transport": transport,
+            "Network": internet,
+            "Data Link": frame,
+            "Physical": "Bits on medium"
+        }
+        for l, val in osi_dict.items():
+            st.write(f"**{l}** → {val}")
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        for col, (layer, val) in zip([col1,col2,col3,col4], stages):
+            col.write(f"**{layer}** → {val}")
 
     st.divider()
-    st.subheader("5️⃣ Decapsulation at Receiver")
-
-    # Safe Decapsulation
+    
+    st.subheader("2️⃣ Network Path Simulation")
+    # Animate packet through routers
+    for i, r in enumerate(["Sender"] + routers + ["Receiver"]):
+        st.write(f"Packet at: {r}")
+        st.graphviz_chart(network_diagram(packet_stage=f"Stage {i+1}"))
+        time.sleep(simulate_delay)
+        # Simulate packet loss
+        if simulate_loss > 0 and i != 0 and i != len(routers)+1:
+            import random
+            if random.randint(0,100) < simulate_loss:
+                st.warning(f"Packet lost at {r}! Simulation stopped.")
+                return
+    
+    st.divider()
+    
+    st.subheader("3️⃣ Decapsulation at Receiver")
     try:
-        # Remove Ethernet Header
         step1 = frame.replace("ETH_FRAME[", "").rstrip("]")
-        st.write("Remove Ethernet Header:", step1)
-
-        # Remove IP Header
-        if "[" in step1:
-            step2 = step1.split("[", 1)[1].rstrip("]")
-        else:
-            step2 = step1
-        st.write("Remove IP Header:", step2)
-
-        # Remove Transport Header
-        if "[" in step2:
-            step3 = step2.split("[", 1)[1].rstrip("]")
-        else:
-            step3 = step2
-        st.write("Remove Transport Header:", step3)
-
-        # Final Application Data
+        step2 = step1.split("[",1)[1].rstrip("]") if "[" in step1 else step1
+        step3 = step2.split("[",1)[1].rstrip("]") if "[" in step2 else step2
         st.success("Application Received Message: " + step3)
 
+        if show_osi:
+            osi_decaps = {
+                "Physical Layer": "Bits received from medium",
+                "Data Link Layer": f"ETH_FRAME stripped → {step1}",
+                "Network Layer": f"IP Header stripped → {step2}",
+                "Transport Layer": f"{protocol} Header stripped → {step3}",
+                "Session Layer": "[Session info processed]",
+                "Presentation Layer": "[Data format converted]",
+                "Application Layer": step3
+            }
+            for l, val in osi_decaps.items():
+                st.write(f"**{l}** → {val}")
     except Exception as e:
         st.error("Error during decapsulation: " + str(e))
 
+if simulate and message:
+    simulate_packet_flow()
 else:
-    st.info("Enter parameters and click Start Simulation")
+    st.info("Enter message and click Start Simulation")
