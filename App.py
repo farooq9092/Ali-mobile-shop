@@ -1,136 +1,289 @@
 import streamlit as st
-from graphviz import Digraph
-import time
+import pandas as pd
 import random
+import time
+import networkx as nx
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="TCP/IP + OSI Simulator v3.1", layout="wide")
-st.title("🌐 TCP/IP + OSI Advanced Simulator v3.1")
-st.write("Interactive Lab Simulator: Sender → Routers → Receiver or OSI Model View")
+# ===============================
+# DHCP SERVER CLASS
+# ===============================
 
-# Sidebar
-st.sidebar.header("Simulation Options")
-sim_type = st.sidebar.selectbox("Choose Simulator", ["TCP/IP Simulation", "OSI Model Simulation"])
-protocol = st.sidebar.selectbox("Transport Protocol", ["TCP", "UDP"])
-message = st.sidebar.text_input("Enter Message", "Hello World")
-src_ip = st.sidebar.text_input("Source IP", "192.168.1.10")
-dst_ip = st.sidebar.text_input("Destination IP", "192.168.1.20")
-src_port = st.sidebar.text_input("Source Port", "5000")
-dst_port = st.sidebar.text_input("Destination Port", "80")
-simulate = st.sidebar.button("Start Simulation")
+class DHCPServer:
 
-routers = ["Router1", "Router2"]
-delay = st.sidebar.slider("Network Delay (sec)", 0.0, 3.0, 1.0)
-loss = st.sidebar.slider("Packet Loss (%)", 0, 50, 0)
+    def __init__(self, name, network, start, end, lease_time):
 
-# ----------------------------
-# Helper Functions
-# ----------------------------
-def encapsulate(data):
-    if protocol == "TCP":
-        transport = f"TCP(src={src_port}, dst={dst_port})[{data}]"
-    else:
-        transport = f"UDP(src={src_port}, dst={dst_port})[{data}]"
-    internet = f"IP(src={src_ip}, dst={dst_ip})[{transport}]"
-    network_access = f"ETH_FRAME[{internet}]"
-    return data, transport, internet, network_access
+        self.name = name
+        self.network = network
+        self.start = start
+        self.end = end
+        self.lease_time = lease_time
 
-def network_diagram(packet_stage=None):
-    g = Digraph()
-    g.node("A", "Sender")
-    for r in routers:
-        g.node(r, r)
-    g.node("B", "Receiver")
-    g.edge("A", routers[0], label=packet_stage or "Packet")
-    for i in range(len(routers)-1):
-        g.edge(routers[i], routers[i+1], label=packet_stage or "Forward")
-    g.edge(routers[-1], "B", label=packet_stage or "Forward")
-    return g
+        self.available_ips = [network + str(i) for i in range(start, end + 1)]
+        self.leases = {}
+        self.offers = {}
 
-# ----------------------------
-# OSI Model Simulator
-# ----------------------------
-def osi_model_simulator():
-    st.subheader("🌐 OSI Model Simulation")
-    app, transport, internet, frame = encapsulate(message)
-    osi_encap = {
-        "Application": app,
-        "Presentation": f"[Format]{app}",
-        "Session": f"[Session]{app}",
-        "Transport": transport,
-        "Network": internet,
-        "Data Link": frame,
-        "Physical": "Bits transmitted over medium"
-    }
-    st.write("**Encapsulation**")
-    for layer, val in osi_encap.items():
-        st.write(f"**{layer} Layer** → {val}")
+    def discover(self, mac):
 
-    st.write("---")
-    st.write("**Decapsulation**")
-    try:
-        step1 = frame.replace("ETH_FRAME[", "").rstrip("]")
-        step2 = step1.split("[",1)[1].rstrip("]") if "[" in step1 else step1
-        step3 = step2.split("[",1)[1].rstrip("]") if "[" in step2 else step2
-        st.success("Application Received Message: " + step3)
-        osi_decaps = {
-            "Physical Layer": "Bits received from medium",
-            "Data Link Layer": f"ETH_FRAME stripped → {step1}",
-            "Network Layer": f"IP Header stripped → {step2}",
-            "Transport Layer": f"{protocol} Header stripped → {step3}",
-            "Session Layer": "[Session info processed]",
-            "Presentation Layer": "[Data format converted]",
-            "Application Layer": step3
+        if mac in self.leases:
+            return self.leases[mac]["ip"]
+
+        if len(self.available_ips) == 0:
+            return None
+
+        ip = random.choice(self.available_ips)
+        self.offers[mac] = ip
+
+        return ip
+
+    def request(self, mac):
+
+        if mac not in self.offers:
+            return None
+
+        ip = self.offers[mac]
+
+        if ip not in self.available_ips:
+            return None
+
+        self.available_ips.remove(ip)
+
+        lease = {
+            "ip": ip,
+            "start": time.time(),
+            "expiry": time.time() + self.lease_time
         }
-        for layer, val in osi_decaps.items():
-            st.write(f"**{layer} Layer** → {val}")
-    except Exception as e:
-        st.error("Error during decapsulation: " + str(e))
 
-# ----------------------------
-# TCP/IP Simulation
-# ----------------------------
-def tcp_ip_simulator():
-    st.subheader("🌐 TCP/IP Packet Flow Simulation")
-    app, transport, internet, frame = encapsulate(message)
+        self.leases[mac] = lease
+        del self.offers[mac]
 
-    # Encapsulation display
-    st.write("**Encapsulation Process**")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.write(f"Application Layer → {app}")
-    col2.write(f"Transport Layer → {transport}")
-    col3.write(f"Internet Layer → {internet}")
-    col4.write(f"Network Access Layer → {frame}")
+        return ip
 
-    st.write("---")
-    st.write("**Network Path**")
-    for i, r in enumerate(["Sender"] + routers + ["Receiver"]):
-        st.write(f"Packet at: {r}")
-        st.graphviz_chart(network_diagram(packet_stage=f"Stage {i+1}"))
-        time.sleep(delay)
-        # Simulate packet loss at routers
-        if loss > 0 and i != 0 and i != len(routers)+1:
-            if random.randint(0,100) < loss:
-                st.warning(f"Packet lost at {r}! Simulation stopped.")
-                return
+    def cleanup(self):
 
-    st.write("---")
-    st.write("**Decapsulation at Receiver**")
-    try:
-        step1 = frame.replace("ETH_FRAME[", "").rstrip("]")
-        step2 = step1.split("[",1)[1].rstrip("]") if "[" in step1 else step1
-        step3 = step2.split("[",1)[1].rstrip("]") if "[" in step2 else step2
-        st.success("Application Received Message: " + step3)
-    except Exception as e:
-        st.error("Error during decapsulation: " + str(e))
+        expired = []
 
+        for mac in self.leases:
+            if time.time() > self.leases[mac]["expiry"]:
+                expired.append(mac)
 
-# ----------------------------
-# Main Execution
-# ----------------------------
-if simulate and message:
-    if sim_type == "OSI Model Simulation":
-        osi_model_simulator()
-    else:
-        tcp_ip_simulator()
-else:
-    st.info("Enter message and click Start Simulation")
+        for mac in expired:
+
+            ip = self.leases[mac]["ip"]
+
+            self.available_ips.append(ip)
+
+            del self.leases[mac]
+
+# ===============================
+# CLIENT
+# ===============================
+
+class DHCPClient:
+
+    def __init__(self):
+
+        self.mac = self.generate_mac()
+        self.ip = None
+
+    def generate_mac(self):
+        return "02:00:%02x:%02x:%02x:%02x" % tuple(
+            random.randint(0,255) for _ in range(4)
+        )
+
+# ===============================
+# SESSION STATE
+# ===============================
+
+if "servers" not in st.session_state:
+    st.session_state.servers = []
+
+if "clients" not in st.session_state:
+    st.session_state.clients = []
+
+if "logs" not in st.session_state:
+    st.session_state.logs = []
+
+# ===============================
+# LOGGING
+# ===============================
+
+def log(msg):
+    st.session_state.logs.append({
+        "time": time.strftime("%H:%M:%S"),
+        "event": msg
+    })
+
+# ===============================
+# UI
+# ===============================
+
+st.set_page_config(page_title="Ultimate DHCP Lab", layout="wide")
+
+st.title("🧪 Ultimate DHCP Network Lab")
+
+# ===============================
+# SIDEBAR CONFIG
+# ===============================
+
+st.sidebar.header("Add DHCP Server")
+
+name = st.sidebar.text_input("Server Name", "DHCP-Server")
+network = st.sidebar.text_input("Network Prefix", "192.168.1.")
+start = st.sidebar.number_input("Start IP", 100)
+end = st.sidebar.number_input("End IP", 120)
+lease = st.sidebar.slider("Lease Time", 60, 600, 120)
+
+if st.sidebar.button("Add Server"):
+
+    server = DHCPServer(name, network, start, end, lease)
+    st.session_state.servers.append(server)
+
+    log(f"Server {name} added")
+
+# ===============================
+# CLIENT GENERATOR
+# ===============================
+
+st.sidebar.header("Clients")
+
+if st.sidebar.button("Add Client"):
+
+    client = DHCPClient()
+    st.session_state.clients.append(client)
+
+    log(f"Client {client.mac} joined network")
+
+# ===============================
+# ATTACK SIMULATIONS
+# ===============================
+
+st.sidebar.header("Attack Simulation")
+
+if st.sidebar.button("DHCP Starvation Attack"):
+
+    for i in range(30):
+
+        client = DHCPClient()
+        st.session_state.clients.append(client)
+
+    log("DHCP starvation attack triggered")
+
+if st.sidebar.button("Add Rogue DHCP Server"):
+
+    rogue = DHCPServer("Rogue-DHCP", "10.0.0.", 50, 100, 300)
+    st.session_state.servers.append(rogue)
+
+    log("Rogue DHCP server deployed")
+
+# ===============================
+# DHCP PROCESS
+# ===============================
+
+if st.button("Run DHCP Cycle"):
+
+    for client in st.session_state.clients:
+
+        if client.ip is None:
+
+            log(f"{client.mac} DISCOVER")
+
+            for server in st.session_state.servers:
+
+                offer = server.discover(client.mac)
+
+                if offer:
+
+                    log(f"{server.name} OFFER {offer}")
+
+                    ip = server.request(client.mac)
+
+                    if ip:
+                        client.ip = ip
+                        log(f"{client.mac} ACK {ip}")
+                        break
+
+# ===============================
+# CLEANUP
+# ===============================
+
+for server in st.session_state.servers:
+    server.cleanup()
+
+# ===============================
+# LEASE TABLE
+# ===============================
+
+st.subheader("Active DHCP Leases")
+
+rows = []
+
+for server in st.session_state.servers:
+
+    for mac in server.leases:
+
+        lease = server.leases[mac]
+
+        rows.append({
+            "Server": server.name,
+            "MAC": mac,
+            "IP": lease["ip"],
+            "Expires": int(lease["expiry"] - time.time())
+        })
+
+df = pd.DataFrame(rows)
+
+st.dataframe(df, use_container_width=True)
+
+# ===============================
+# POOL USAGE
+# ===============================
+
+st.subheader("IP Pool Usage")
+
+for server in st.session_state.servers:
+
+    total = server.end - server.start + 1
+    used = len(server.leases)
+
+    st.write(server.name)
+
+    st.progress(used / total)
+
+# ===============================
+# NETWORK TOPOLOGY
+# ===============================
+
+st.subheader("Network Topology")
+
+G = nx.Graph()
+
+for server in st.session_state.servers:
+    G.add_node(server.name, color="red")
+
+for client in st.session_state.clients:
+    G.add_node(client.mac, color="blue")
+
+for client in st.session_state.clients:
+    if client.ip:
+        for server in st.session_state.servers:
+            if client.mac in server.leases:
+                G.add_edge(server.name, client.mac)
+
+colors = [G.nodes[n].get("color","gray") for n in G.nodes]
+
+fig, ax = plt.subplots()
+
+nx.draw(G, with_labels=True, node_color=colors, ax=ax)
+
+st.pyplot(fig)
+
+# ===============================
+# EVENT LOG
+# ===============================
+
+st.subheader("Packet Event Log")
+
+log_df = pd.DataFrame(st.session_state.logs)
+
+st.dataframe(log_df, use_container_width=True)
